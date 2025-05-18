@@ -14,7 +14,7 @@ sqlx = ["dep:sqlx"]
 uuid = ["dep:uuid"]
 
 [dependencies]
-branded-derive = { path = "../branded-derive" }
+branded-derive = { path = "../branded-derive", version = "0.1" }
 
 uuid = { version = "1", optional = true, default-features = false, features = ["v4"] }
 sqlx = { version = "0.8", optional = true, default-features = false }
