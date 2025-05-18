@@ -82,3 +82,22 @@ mod sqlx {
         needs_decode::<UserId, sqlx::Sqlite>();
     }
 }
+
+#[cfg(feature = "uuid")]
+mod uuid {
+    use branded::Branded;
+
+    #[test]
+    fn test_uuid_derive() {
+        #[derive(Branded)]
+        #[branded(uuid)]
+        pub struct UserId(uuid::Uuid);
+
+        let id = UserId::new_v4();
+        let str = id.to_string();
+        assert_eq!(str.len(), 36);
+
+        let nil = UserId::nil();
+        assert_eq!(nil.inner(), &uuid::Uuid::nil());
+    }
+}

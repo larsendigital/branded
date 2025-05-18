@@ -82,6 +82,10 @@ pub(crate) fn expand_branded_derive(
         tokens.extend(expand_sqlx_impl(struct_name));
     }
 
+    if options.uuid {
+        tokens.extend(expand_uuid_impl(struct_name));
+    }
+
     Ok(tokens)
 }
 
@@ -274,6 +278,21 @@ pub(crate) fn expand_sqlx_impl(brand_struct_name: &syn::Ident) -> proc_macro2::T
             fn encode_by_ref(&self, buf: &mut DB::ArgumentBuffer<'_>) -> ::std::result::Result<::sqlx::encode::IsNull, ::sqlx::error::BoxDynError> {
                 self.inner().encode_by_ref(buf)
             }
+        }
+    }
+}
+
+pub(crate) fn expand_uuid_impl(brand_struct_name: &syn::Ident) -> proc_macro2::TokenStream {
+    quote! {
+        impl #brand_struct_name
+        where
+            for<'__branded> Self: Branded<Inner = ::uuid::Uuid>
+        {
+            /// Get the nil UUID.
+            fn nil() -> Self { Self::new(::uuid::Uuid::nil()) }
+
+            /// Get a new random UUID v4.
+            fn new_v4() -> Self { Self::new(::uuid::Uuid::new_v4()) }
         }
     }
 }

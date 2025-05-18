@@ -10,7 +10,7 @@ serde = ["dep:serde"]
 [dependencies]
 branded-derive = { path = "../branded-derive" }
 
-uuid = { version = "1", optional = true, default-features = false }
+uuid = { version = "1", optional = true, default-features = false, features = ["v4"] }
 sqlx = { version = "0.8", optional = true, default-features = false }
 serde = { version = "1", optional = true, default-features = false }
 

@@ -5,7 +5,3 @@ pub trait Branded {
     fn inner(&self) -> &Self::Inner;
     fn into_inner(self) -> Self::Inner;
 }
-
-#[derive(Branded)]
-#[branded]
-pub struct UserId(String);
