@@ -2,6 +2,10 @@
 name = "branded-derive"
 version = "0.1.0"
 edition = "2021"
+authors = ["Mats Jun Larsen <mats@larsendigital.no>"]
+repository = "https://github.com/larsendigital/branded"
+description = "Branded types for Rust."
+license = "MIT"
 
 [lib]
 proc-macro = true

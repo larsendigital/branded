@@ -2,10 +2,16 @@
 name = "branded"
 version = "0.1.0"
 edition = "2021"
+authors = ["Mats Jun Larsen <mats@larsendigital.no>"]
+repository = "https://github.com/larsendigital/branded"
+description = "Branded types for Rust."
+license = "MIT"
 
 [features]
 default = []
 serde = ["dep:serde"]
+sqlx = ["dep:sqlx"]
+uuid = ["dep:uuid"]
 
 [dependencies]
 branded-derive = { path = "../branded-derive" }

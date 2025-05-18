@@ -16,6 +16,8 @@ inner type implements them.
 
 The crate provides the `Branded` trait and the `Branded` derive macro.
 
+The crate has no official MSRV, but it is tested against 1.82 and nightly.
+
 ```toml
 # Cargo.toml
 
