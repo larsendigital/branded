@@ -38,7 +38,7 @@ fn test_accessors() {
 
 #[cfg(feature = "serde")]
 mod serde {
-    use branded_derive::Branded;
+    use branded::Branded;
     use serde::de::DeserializeOwned;
     use serde::Serialize;
 
@@ -59,5 +59,26 @@ mod serde {
         assert_eq!(json, r#""123""#);
         let recovered: UserId = serde_json::from_str(&json).unwrap();
         assert_eq!(recovered, id);
+    }
+}
+
+#[cfg(feature = "sqlx")]
+mod sqlx {
+    use branded::Branded;
+    use sqlx::Database;
+
+    #[test]
+    fn test_sqlx_derive() {
+        #[derive(Branded)]
+        #[branded(sqlx)]
+        pub struct UserId(String);
+
+        fn needs_type<T: sqlx::Type<DB>, DB: Database>() {}
+        fn needs_encode<'en, T: sqlx::Encode<'en, DB>, DB: Database>() {}
+        fn needs_decode<'de, T: sqlx::Decode<'de, DB>, DB: Database>() {}
+
+        needs_type::<UserId, sqlx::Sqlite>();
+        needs_encode::<UserId, sqlx::Sqlite>();
+        needs_decode::<UserId, sqlx::Sqlite>();
     }
 }

@@ -78,6 +78,10 @@ pub(crate) fn expand_branded_derive(
         tokens.extend(expand_serde_impl(struct_name));
     }
 
+    if options.sqlx {
+        tokens.extend(expand_sqlx_impl(struct_name));
+    }
+
     Ok(tokens)
 }
 
@@ -173,7 +177,7 @@ pub(crate) fn expand_ord_impl(brand_struct_name: &syn::Ident) -> proc_macro2::To
             for<'__branded> <Self as Branded>::Inner: #ord_trait,
         {
             fn cmp(&self, other: &Self) -> ::std::cmp::Ordering {
-                self.inner().cmp(&other.inner())
+                self.0.cmp(&other.0)
             }
         }
         impl #partial_ord_trait for #brand_struct_name
@@ -181,7 +185,7 @@ pub(crate) fn expand_ord_impl(brand_struct_name: &syn::Ident) -> proc_macro2::To
             for<'__branded> <Self as Branded>::Inner: #partial_ord_trait,
         {
             fn partial_cmp(&self, other: &Self) -> ::std::option::Option<::std::cmp::Ordering> {
-                self.inner().partial_cmp(&other.inner())
+                self.0.partial_cmp(&other.0)
             }
         }
     }
@@ -229,6 +233,46 @@ pub(crate) fn expand_serde_impl(brand_struct_name: &syn::Ident) -> proc_macro2::
             {
                 <Self as Branded>::Inner::deserialize(deserializer)
                     .map(Self::new)
+            }
+        }
+    }
+}
+
+/// Derive a sqlx Type, Encode, and Decode implementation for the branded type if asked for.
+pub(crate) fn expand_sqlx_impl(brand_struct_name: &syn::Ident) -> proc_macro2::TokenStream {
+    let type_trait: syn::Path = syn::parse_quote!(::sqlx::Type);
+    let encode_trait: syn::Path = syn::parse_quote!(::sqlx::Encode);
+    let decode_trait: syn::Path = syn::parse_quote!(::sqlx::Decode);
+    quote! {
+        impl<DB> #type_trait<DB> for #brand_struct_name
+        where
+            for<'__branded> <Self as Branded>::Inner: #type_trait<DB>,
+            DB: ::sqlx::Database,
+        {
+            fn type_info() -> DB::TypeInfo {
+                <Self as Branded>::Inner::type_info()
+            }
+        }
+
+        impl<'de, DB> #decode_trait<'de, DB> for #brand_struct_name
+        where
+            for<'__branded> Self: Branded,
+            <Self as Branded>::Inner: for<'a> #decode_trait<'a, DB>,
+            DB: ::sqlx::Database,
+        {
+            fn decode(value: DB::ValueRef<'_>) -> ::std::result::Result<#brand_struct_name, ::sqlx::error::BoxDynError> {
+                <Self as Branded>::Inner::decode(value).map(Self::new)
+            }
+        }
+
+        impl<'en, DB> #encode_trait<'en, DB> for #brand_struct_name
+        where
+            for<'__branded> Self: Branded,
+            <Self as Branded>::Inner: for<'a> #encode_trait<'a, DB>,
+            DB: ::sqlx::Database,
+        {
+            fn encode_by_ref(&self, buf: &mut DB::ArgumentBuffer<'_>) -> ::std::result::Result<::sqlx::encode::IsNull, ::sqlx::error::BoxDynError> {
+                self.inner().encode_by_ref(buf)
             }
         }
     }
