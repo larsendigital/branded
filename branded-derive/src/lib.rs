@@ -3,36 +3,41 @@ use proc_macro::TokenStream;
 use quote::quote;
 
 #[derive(FromDeriveInput)]
-#[darling(supports(struct_newtype))]
+#[darling(attributes(branded), supports(struct_newtype))]
 pub(crate) struct BrandedTypeOptions {
-    serde: Option<syn::Ident>,
-    uuid: Option<syn::Ident>,
-    sqlx: Option<syn::Ident>,
     ident: syn::Ident,
     data: darling::ast::Data<(), BrandedFieldOptions>,
+
+    #[darling(default)]
+    serde: bool,
+    #[darling(default)]
+    uuid: bool,
+    #[darling(default)]
+    sqlx: bool,
 }
 
 #[derive(FromField)]
-#[darling(attributes(branded))]
 pub(crate) struct BrandedFieldOptions {
     ty: syn::Type,
 }
 
-#[proc_macro_derive(Branded)]
-pub fn branded(input: TokenStream) -> TokenStream {
+#[proc_macro_derive(Branded, attributes(branded))]
+pub fn branded_derive(input: TokenStream) -> TokenStream {
     let input = syn::parse_macro_input!(input);
     let options = match BrandedTypeOptions::from_derive_input(&input) {
         Ok(options) => options,
         Err(err) => return err.write_errors().into(),
     };
-    let expanded = match expand_branded(options) {
+    let expanded = match expand_branded_derive(options) {
         Ok(expanded) => expanded,
         Err(err) => return err.to_compile_error().into(),
     };
     expanded.into()
 }
 
-pub(crate) fn expand_branded(options: BrandedTypeOptions) -> syn::Result<proc_macro2::TokenStream> {
+pub(crate) fn expand_branded_derive(
+    options: BrandedTypeOptions,
+) -> syn::Result<proc_macro2::TokenStream> {
     let mut tokens = proc_macro2::TokenStream::new();
     let struct_name = &options.ident;
     let field = options
@@ -50,49 +55,40 @@ pub(crate) fn expand_branded(options: BrandedTypeOptions) -> syn::Result<proc_ma
             "derive(Branded) can only be used on structs",
         ))?;
     let ty = field.ty;
-    let struct_trait_name = quote::format_ident!("{}Brand", struct_name);
-    let struct_doc_comment = format!("The `{struct_name}` branded type. This utility trait provides blanket implementations for common traits.");
     let constructor_doc_comment = format!("Construct a new `{struct_name}` value.");
     tokens.extend(quote! {
-        #[doc = #struct_doc_comment]
-        trait #struct_trait_name {
-            type Inner;
+        impl Branded for #struct_name {
+            type Inner = #ty;
+            fn inner(&self) -> &#ty { &self.0 }
+            fn into_inner(self) -> #ty { self.0 }
         }
         impl #struct_name {
             #[doc = #constructor_doc_comment]
             pub fn new(inner: #ty) -> Self { Self(inner) }
-
-            /// Get the underlying type.
-            pub fn inner(&self) -> &#ty { &self.0 }
-
-            /// Convert this branded type into the underlying type.
-            pub fn into_inner(self) -> #ty { self.0 }
-        }
-        impl #struct_trait_name for #struct_name {
-            type Inner = #ty;
         }
     });
 
-    tokens.extend(expand_clone_copy_impl(struct_name, &struct_trait_name));
-    tokens.extend(expand_debug_display_impl(struct_name, &struct_trait_name));
-    tokens.extend(expand_default_impl(struct_name, &struct_trait_name));
-    tokens.extend(expand_ord_impl(struct_name, &struct_trait_name));
-    tokens.extend(expand_hash_impl(struct_name, &struct_trait_name));
+    tokens.extend(expand_clone_copy_impl(struct_name));
+    tokens.extend(expand_debug_display_impl(struct_name));
+    tokens.extend(expand_default_impl(struct_name));
+    tokens.extend(expand_ord_impl(struct_name));
+    tokens.extend(expand_hash_impl(struct_name));
+
+    if options.serde {
+        tokens.extend(expand_serde_impl(struct_name));
+    }
 
     Ok(tokens)
 }
 
 /// Derive a Clone implementation for the branded type if the inner type is Clone.
-pub(crate) fn expand_clone_copy_impl(
-    brand_struct_name: &syn::Ident,
-    brand_struct_trait_name: &syn::Ident,
-) -> proc_macro2::TokenStream {
+pub(crate) fn expand_clone_copy_impl(brand_struct_name: &syn::Ident) -> proc_macro2::TokenStream {
     let copy_trait: syn::Path = syn::parse_quote!(::std::marker::Copy);
     let clone_trait: syn::Path = syn::parse_quote!(::std::clone::Clone);
     quote! {
         impl #clone_trait for #brand_struct_name
         where
-            for<'__branded> <Self as #brand_struct_trait_name>::Inner: #clone_trait,
+            for<'__branded> <Self as Branded>::Inner: #clone_trait,
         {
             fn clone(&self) -> Self {
                 Self::new(self.inner().clone())
@@ -100,7 +96,7 @@ pub(crate) fn expand_clone_copy_impl(
         }
         impl #copy_trait for #brand_struct_name
         where
-            for<'__branded> <Self as #brand_struct_trait_name>::Inner: #clone_trait,
+            for<'__branded> <Self as Branded>::Inner: #copy_trait,
         {
         }
     }
@@ -113,14 +109,13 @@ pub(crate) fn expand_clone_copy_impl(
 /// inner type contained in the branded type name.
 pub(crate) fn expand_debug_display_impl(
     brand_struct_name: &syn::Ident,
-    brand_struct_trait_name: &syn::Ident,
 ) -> proc_macro2::TokenStream {
     let display_trait: syn::Path = syn::parse_quote!(::std::fmt::Display);
     let debug_trait: syn::Path = syn::parse_quote!(::std::fmt::Debug);
     quote! {
         impl #display_trait for #brand_struct_name
         where
-            for<'__branded> <Self as #brand_struct_trait_name>::Inner: #display_trait,
+            for<'__branded> <Self as Branded>::Inner: #display_trait,
         {
             fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
                 ::std::fmt::Display::fmt(&self.inner(), f)
@@ -128,7 +123,7 @@ pub(crate) fn expand_debug_display_impl(
         }
         impl #debug_trait for #brand_struct_name
         where
-            for<'__branded> <Self as #brand_struct_trait_name>::Inner: #debug_trait,
+            for<'__branded> <Self as Branded>::Inner: #debug_trait,
         {
             fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
                 f.debug_tuple(stringify!(#brand_struct_name)).field(self.inner()).finish()
@@ -138,18 +133,15 @@ pub(crate) fn expand_debug_display_impl(
 }
 
 /// Derive a Default implementation for the branded type if the inner type conforms to Default.
-pub(crate) fn expand_default_impl(
-    brand_struct_name: &syn::Ident,
-    brand_struct_trait_name: &syn::Ident,
-) -> proc_macro2::TokenStream {
+pub(crate) fn expand_default_impl(brand_struct_name: &syn::Ident) -> proc_macro2::TokenStream {
     let path: syn::Path = syn::parse_quote!(::std::default::Default);
     quote! {
         impl #path for #brand_struct_name
         where
-            for<'__branded> <Self as #brand_struct_trait_name>::Inner: #path,
+            for<'__branded> <Self as Branded>::Inner: #path,
         {
             fn default() -> Self {
-                Self::new(<Self as #brand_struct_trait_name>::Inner::default())
+                Self::new(<Self as Branded>::Inner::default())
             }
         }
     }
@@ -157,10 +149,7 @@ pub(crate) fn expand_default_impl(
 
 /// Derive a PartialEq, Eq, Ord, and PartialOrd implementation for the branded type if the inner
 /// type conforms to any of those traits.
-pub(crate) fn expand_ord_impl(
-    brand_struct_name: &syn::Ident,
-    brand_struct_trait_name: &syn::Ident,
-) -> proc_macro2::TokenStream {
+pub(crate) fn expand_ord_impl(brand_struct_name: &syn::Ident) -> proc_macro2::TokenStream {
     let eq_trait: syn::Path = syn::parse_quote!(::std::cmp::Eq);
     let partial_eq_trait: syn::Path = syn::parse_quote!(::std::cmp::PartialEq);
     let ord_trait: syn::Path = syn::parse_quote!(::std::cmp::Ord);
@@ -168,7 +157,7 @@ pub(crate) fn expand_ord_impl(
     quote! {
         impl #partial_eq_trait for #brand_struct_name
         where
-            for<'__branded> <Self as #brand_struct_trait_name>::Inner: #partial_eq_trait,
+            for<'__branded> <Self as Branded>::Inner: #partial_eq_trait,
         {
             fn eq(&self, other: &Self) -> bool {
                 self.inner().eq(other.inner())
@@ -176,12 +165,12 @@ pub(crate) fn expand_ord_impl(
         }
         impl #eq_trait for #brand_struct_name
         where
-            for<'__branded> <Self as #brand_struct_trait_name>::Inner: #eq_trait,
+            for<'__branded> <Self as Branded>::Inner: #eq_trait,
         {
         }
         impl #ord_trait for #brand_struct_name
         where
-            for<'__branded> <Self as #brand_struct_trait_name>::Inner: #ord_trait,
+            for<'__branded> <Self as Branded>::Inner: #ord_trait,
         {
             fn cmp(&self, other: &Self) -> ::std::cmp::Ordering {
                 self.inner().cmp(&other.inner())
@@ -189,7 +178,7 @@ pub(crate) fn expand_ord_impl(
         }
         impl #partial_ord_trait for #brand_struct_name
         where
-            for<'__branded> <Self as #brand_struct_trait_name>::Inner: #partial_ord_trait,
+            for<'__branded> <Self as Branded>::Inner: #partial_ord_trait,
         {
             fn partial_cmp(&self, other: &Self) -> ::std::option::Option<::std::cmp::Ordering> {
                 self.inner().partial_cmp(&other.inner())
@@ -199,18 +188,47 @@ pub(crate) fn expand_ord_impl(
 }
 
 /// Derive a Hash implementation for the branded type if the inner type conforms to Hash.
-pub(crate) fn expand_hash_impl(
-    brand_struct_name: &syn::Ident,
-    brand_struct_trait_name: &syn::Ident,
-) -> proc_macro2::TokenStream {
+pub(crate) fn expand_hash_impl(brand_struct_name: &syn::Ident) -> proc_macro2::TokenStream {
     let hash_trait: syn::Path = syn::parse_quote!(::std::hash::Hash);
     quote! {
         impl #hash_trait for #brand_struct_name
         where
-            for<'__branded> <Self as #brand_struct_trait_name>::Inner: #hash_trait,
+            for<'__branded> <Self as Branded>::Inner: #hash_trait,
         {
             fn hash<H: ::std::hash::Hasher>(&self, state: &mut H) {
                 self.inner().hash(state);
+            }
+        }
+    }
+}
+
+/// Derive a Serde implementation for the branded type if asked for.
+pub(crate) fn expand_serde_impl(brand_struct_name: &syn::Ident) -> proc_macro2::TokenStream {
+    let serialize_trait: syn::Path = syn::parse_quote!(::serde::Serialize);
+    let deserialize_trait: syn::Path = syn::parse_quote!(::serde::Deserialize);
+    quote! {
+        impl #serialize_trait for #brand_struct_name
+        where
+            for<'__branded> <Self as Branded>::Inner: #serialize_trait,
+        {
+            fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+            where
+                S: ::serde::Serializer,
+            {
+                self.inner().serialize(serializer)
+            }
+        }
+
+        impl<'de> #deserialize_trait<'de> for #brand_struct_name
+        where
+            for<'__branded> <Self as Branded>::Inner: #deserialize_trait<'de>,
+        {
+            fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+            where
+                D: ::serde::Deserializer<'de>,
+            {
+                <Self as Branded>::Inner::deserialize(deserializer)
+                    .map(Self::new)
             }
         }
     }

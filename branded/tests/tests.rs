@@ -35,3 +35,29 @@ fn test_accessors() {
     assert_eq!(user_id.inner(), &123);
     assert_eq!(user_id.into_inner(), 123);
 }
+
+#[cfg(feature = "serde")]
+mod serde {
+    use branded_derive::Branded;
+    use serde::de::DeserializeOwned;
+    use serde::Serialize;
+
+    #[test]
+    fn test_serde_derive() {
+        #[derive(Branded)]
+        #[branded(serde)]
+        pub struct UserId(String);
+
+        fn needs_serialize<T: Serialize>() {}
+        fn needs_deserialize<T: DeserializeOwned>() {}
+
+        needs_serialize::<UserId>();
+        needs_deserialize::<UserId>();
+
+        let id = UserId::new("123".to_string());
+        let json = serde_json::to_string(&id).unwrap();
+        assert_eq!(json, r#""123""#);
+        let recovered: UserId = serde_json::from_str(&json).unwrap();
+        assert_eq!(recovered, id);
+    }
+}
