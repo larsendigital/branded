@@ -289,10 +289,10 @@ pub(crate) fn expand_uuid_impl(brand_struct_name: &syn::Ident) -> proc_macro2::T
             for<'__branded> Self: Branded<Inner = ::uuid::Uuid>
         {
             /// Get the nil UUID.
-            fn nil() -> Self { Self::new(::uuid::Uuid::nil()) }
+            pub fn nil() -> Self { Self::new(::uuid::Uuid::nil()) }
 
             /// Get a new random UUID v4.
-            fn new_v4() -> Self { Self::new(::uuid::Uuid::new_v4()) }
+            pub fn new_v4() -> Self { Self::new(::uuid::Uuid::new_v4()) }
         }
     }
 }
